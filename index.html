@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>オンラインRPG</title>
+    <link href="https://fonts.googleapis.com/css2?family=Yomogi&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Yomogi', sans-serif;
+        }
+        #gameCanvas {
+            display: block;
+            background-color: #e0e0e0;
+        }
+        #joystick {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 100px;
+            height: 100px;
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 50%;
+            touch-action: none;
+        }
+        #joystickInner {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 50%;
+            top: 25px;
+            left: 25px;
+        }
+        #inventory {
+            position: absolute;
+            bottom: 140px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .item {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            background-color: #ccc;
+            border: 1px solid #333;
+            margin: 5px;
+            text-align: center;
+            line-height: 40px;
+            cursor: pointer;
+        }
+        #chat {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 300px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #chatMessages {
+            height: 100px;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+        }
+        #chatInput {
+            width: calc(100% - 22px);
+        }
+        #leaderboard {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #leaderboard ol {
+            padding-left: 20px;
+        }
+        .npc {
+            color: green;
+        }
+        .sign {
+            color: brown;
+        }
+        .hp-bar {
+            position: absolute;
+            width: 100px;
+            height: 10px;
+            background-color: red;
+        }
+        .mp-bar {
+            position: absolute;
+            width: 100px;
+            height: 10px;
+            background-color: blue;
+            top: 12px;
+        }
+        #battleScreen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 80%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        #dialog {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: black;
+            text-align: center;
+            padding: 20px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="joystick">
+        <div id="joystickInner"></div>
+    </div>
+    <div id="inventory">
+        <div class="item" onclick="useItem('sword')">⚔️</div>
+        <div class="item" onclick="useItem('shield')">🛡️</div>
+        <div class="item" onclick="useItem('wood')">🌳</div>
+        <div class="item" onclick="castSpell('feuer')">🔥</div>
+        <div class="item" onclick="castSpell('isen')">❄️</div>
+        <div class="item" onclick="castSpell('grass')">🌿</div>
+        <div class="item" onclick="useItem('mpPotion')">🧪</div>
+        <div class="item" onclick="castSpell('lightningBuster')">⚡</div>
+        <div class="item" onclick="useItem('bow')">🏹</div>
+        <div class="item" onclick="useItem('axe')">🪓</div>
+        <div class="item" onclick="useItem('dagger')">🗡️</div>
+    </div>
+    <div id="chat">
+        <div id="chatMessages"></div>
+        <input type="text" id="chatInput" onkeydown="if(event.key === 'Enter') sendMessage()">
+    </div>
+    <div id="leaderboard">
+        <h3>ランキング</h3>
+        <ol id="leaderboardList"></ol>
+    </div>
+    <div id="battleScreen">
+        <h2>戦闘中</h2>
+        <div id="battleLog"></div>
+        <button onclick="attack()">攻撃</button>
+        <button onclick="useItem('mpPotion')">MP回復</button>
+    </div>
+    <div id="dialog">
+        <div id="dialogContent"></div>
+        <button onclick="closeDialog()">閉じる</button>
+    </div>
+    <audio id="bgm" loop>
+        <source src="bgm.mp3" type="audio/mp3">
+    </audio>
+    <audio id="battleSound">
+        <source src="https://soundeffect-lab.info/sound/various/mp3/footsteps-dirt1.mp3" type="audio/mp3">
+    </audio>
+    <audio id="attackSound">
+        <source src="https://soundeffect-lab.info/sound/martial/mp3/sword-swing1.mp3" type="audio/mp3">
+    </audio>
+    <audio id="spellSound">
+        <source src="https://soundeffect-lab.info/sound/anime/mp3/anime-cure1.mp3" type="audio/mp3">
+    </audio>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const joystick = document.getElementById('joystick');
+        const joystickInner = document.getElementById('joystickInner');
+        const battleScreen = document.getElementById('battleScreen');
+        const battleLog = document.getElementById('battleLog');
+        const dialog = document.getElementById('dialog');
+        const dialogContent = document.getElementById('dialogContent');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const leaderboardList = document.getElementById('leaderboardList');
+        const bgm = document.getElementById('bgm');
+        const battleSound = document.getElementById('battleSound');
+        const attackSound = document.getElementById('attackSound');
+        const spellSound = document.getElementById('spellSound');
+        const spells = { feuer: 5, isen: 7, grass: 6, lightningBuster: 10 };
+        const shopItems = { sword: 14, shield: 12, mpPotion: 5, bow: 20, axe: 25, dagger: 15 };
+        
+        let x = window.innerWidth / 2;
+        let y = window.innerHeight / 2;
+        let hp = 100;
+        let mp = 100;
+        let gold = 0;
+        let level = 1;
+        let exp = 0;
+        let inventory = { sword: false, shield: false, wood: false, mpPotion: 1, lightningBuster: false, bow: false, axe: false, dagger: false };
+        let touchStartX, touchStartY, touchCurrentX, touchCurrentY;
+        let moving = false;
+        let players = {};
+        let enemies = [{ id: 'enemy1', x: 100, y: 100, hp: 20, damage: 3, lv: 1 }];
+        let merchants = [{ id: 'merchant1', x: 200, y: 200 }];
+        let trees = [{ id: 'tree1', x: 300, y: 300 }];
+        let npcs = [{ id: 'npc1', x: 400, y: 400, dialog: 'こんにちは、冒険者！' }];
+        let signs = [{ id: 'sign1', x: 500, y: 500, text: 'ここは冒険の始まりです。' }];
+        let map = 'village';
+        let mapData = {
+            'village': { color: '#6c5', size: 1000 },
+            'forest': { color: '#3c3', size: 1200 },
+            'castle': { color: '#999', size: 1500 }
+        };
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = mapData[map].color;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(x - 25, y - 25, 50, 50);
+
+            enemies.forEach(enemy => {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(enemy.x - 20, enemy.y - 20, 40, 40);
+                drawHpBar(enemy.x - 20, enemy.y - 40, enemy.hp, 20);
+            });
+
+            merchants.forEach(merchant => {
+                ctx.fillStyle = 'yellow';
+                ctx.fillRect(merchant.x - 20, merchant.y - 20, 40, 40);
+            });
+
+            trees.forEach(tree => {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(tree.x - 10, tree.y - 30, 20, 60);
+            });
+
+            npcs.forEach(npc => {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(npc.x - 10, npc.y - 10, 20, 20);
+            });
+
+            signs.forEach(sign => {
+                ctx.fillStyle = 'brown';
+                ctx.fillRect(sign.x - 10, sign.y - 10, 20, 20);
+            });
+
+            requestAnimationFrame(draw);
+        }
+
+        function drawHpBar(x, y, hp, maxHp) {
+            ctx.fillStyle = 'red';
+            ctx.fillRect(x, y, (hp / maxHp) * 40, 5);
+        }
+
+        function battle(enemy) {
+            battleScreen.style.display = 'block';
+            battleLog.innerHTML = `${enemy.id}と戦闘開始！`;
+            battleSound.play();
+        }
+
+        function attack() {
+            const damage = Math.floor(Math.random() * 10) + 1;
+            const enemy = enemies[0];
+            enemy.hp -= damage;
+            battleLog.innerHTML += `<br>敵に${damage}ダメージ！`;
+            attackSound.play();
+
+            if (enemy.hp <= 0) {
+                battleLog.innerHTML += `<br>敵を倒した！`;
+                exp += 10;
+                gold += 5;
+                enemies = enemies.filter(e => e.id !== enemy.id);
+                setTimeout(() => {
+                    battleScreen.style.display = 'none';
+                }, 1000);
+            }
+        }
+
+        function useItem(item) {
+            if (item === 'mpPotion' && inventory.mpPotion > 0) {
+                mp += 10;
+                inventory.mpPotion -= 1;
+                battleLog.innerHTML += `<br>MPを10回復！`;
+                spellSound.play();
+            } else if (spells[item]) {
+                const damage = spells[item];
+                const enemy = enemies[0];
+                enemy.hp -= damage;
+                battleLog.innerHTML += `<br>${item}を使って${damage}ダメージ！`;
+                spellSound.play();
+
+                if (enemy.hp <= 0) {
+                    battleLog.innerHTML += `<br>敵を倒した！`;
+                    exp += 10;
+                    gold += 5;
+                    enemies = enemies.filter(e => e.id !== enemy.id);
+                    setTimeout(() => {
+                        battleScreen.style.display = 'none';
+                    }, 1000);
+                }
+            }
+        }
+
+        function castSpell(spell) {
+            if (mp >= spells[spell]) {
+                mp -= spells[spell];
+                useItem(spell);
+            } else {
+                battleLog.innerHTML += `<br>MPが足りない！`;
+            }
+        }
+
+        function interactWithNPC(npc) {
+            dialogContent.innerHTML = npc.dialog;
+            dialog.style.display = 'block';
+        }
+
+        function interactWithSign(sign) {
+            dialogContent.innerHTML = sign.text;
+            dialog.style.display = 'block';
+        }
+
+        function closeDialog() {
+            dialog.style.display = 'none';
+        }
+
+        function switchMap(newMap) {
+            map = newMap;
+            x = window.innerWidth / 2;
+            y = window.innerHeight / 2;
+            enemies = [
+                { id: 'enemy1', x: 100, y: 100, hp: 20, damage: 3, lv: 1 },
+                { id: 'enemy2', x: 150, y: 150, hp: 25, damage: 4, lv: 2 }
+            ];
+            merchants = [{ id: 'merchant1', x: 200, y: 200 }];
+            trees = [{ id: 'tree1', x: 300, y: 300 }];
+            npcs = [{ id: 'npc1', x: 400, y: 400, dialog: 'こんにちは、冒険者！' }];
+            signs = [{ id: 'sign1', x: 500, y: 500, text: 'ここは新しいエリアです。' }];
+        }
+
+        function init() {
+            bgm.play();
+
+            joystick.addEventListener('touchstart', e => {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                moving = true;
+            });
+
+            joystick.addEventListener('touchmove', e => {
+                touchCurrentX = e.touches[0].clientX;
+                touchCurrentY = e.touches[0].clientY;
+                if (moving) {
+                    const dx = touchCurrentX - touchStartX;
+                    const dy = touchCurrentY - touchStartY;
+                    x += dx / 10;
+                    y += dy / 10;
+                    touchStartX = touchCurrentX;
+                    touchStartY = touchCurrentY;
+                }
+            });
+
+            joystick.addEventListener('touchend', () => {
+                moving = false;
+            });
+
+            canvas.addEventListener('click', () => {
+                enemies.forEach(enemy => {
+                    if (Math.abs(x - enemy.x) < 50 && Math.abs(y - enemy.y) < 50) {
+                        battle(enemy);
+                    }
+                });
+
+                npcs.forEach(npc => {
+                    if (Math.abs(x - npc.x) < 50 && Math.abs(y - npc.y) < 50) {
+                        interactWithNPC(npc);
+                    }
+                });
+
+                signs.forEach(sign => {
+                    if (Math.abs(x - sign.x) < 50 && Math.abs(y - sign.y) < 50) {
+                        interactWithSign(sign);
+                    }
+                });
+
+                merchants.forEach(merchant => {
+                    if (Math.abs(x - merchant.x) < 50 && Math.abs(y - merchant.y) < 50) {
+                        // Add interaction with merchants (e.g., open shop menu)
+                    }
+                });
+
+                trees.forEach(tree => {
+                    if (Math.abs(x - tree.x) < 50 && Math.abs(y - tree.y) < 50) {
+                        // Add interaction with trees (e.g., gather wood)
+                    }
+                });
+            });
+
+            draw();
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
